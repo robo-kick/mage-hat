@@ -1028,6 +1028,36 @@ fn a_repository_root_carries_the_deploy_workflow() {
     assert!(run_check(&inner).unwrap().warnings.is_empty());
 }
 
+#[test]
+fn a_workflow_with_its_own_copy_of_the_deploy_steps_is_flagged() {
+    let copy = "jobs:\n  deploy:\n    steps:\n      - run: magehat build\n      - run: npx --yes wrangler@4 deploy\n";
+    let site = scaffold("copied-workflow");
+    std::fs::create_dir_all(site.join(".git")).unwrap();
+    let toml = std::fs::read_to_string(site.join("site.toml")).unwrap();
+    std::fs::write(site.join("site.toml"), format!("{toml}\n[analytics]\nendpoint = \"https://events.example.com/v2/my-site\"\n")).unwrap();
+    std::fs::write(site.join(".github/workflows/deploy.yml"), copy).unwrap();
+    let r = run_check(&site).unwrap();
+    let w = r.warnings.iter().find(|w| w.message.contains("its own copy")).expect("a warning about the copied steps");
+    assert!(w.fix.as_deref().unwrap_or("").contains("deploy-site.yml@main"), "{w}");
+
+    // A site in a subfolder: its repository's workflows count, and the fix names `site:`.
+    let repo = temp("copied-workflow-repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::create_dir_all(repo.join(".github/workflows")).unwrap();
+    std::fs::write(repo.join(".github/workflows/website.yml"), copy).unwrap();
+    let inner = repo.join("website");
+    copy_dir(&site, &inner);
+    std::fs::remove_dir_all(inner.join(".git")).unwrap();
+    std::fs::remove_dir_all(inner.join(".github")).unwrap();
+    let r = run_check(&inner).unwrap();
+    let w = r.warnings.iter().find(|w| w.message.contains("its own copy")).expect("the repository's copy is flagged");
+    assert!(w.message.contains("in the repository root") && w.fix.as_deref().unwrap_or("").contains("with: site:"), "{w}");
+
+    // Calling the shared workflow is clean.
+    std::fs::write(repo.join(".github/workflows/website.yml"), "jobs:\n  deploy:\n    uses: robo-kick/mage-hat/.github/workflows/deploy-site.yml@main\n    with:\n      site: website\n").unwrap();
+    assert!(run_check(&inner).unwrap().warnings.iter().all(|w| !w.message.contains("its own copy")));
+}
+
 /// The error a site fails to load with, before any page is built.
 fn build_error(site: &Path) -> magehat::errors::MageError {
     match build_site(site) {

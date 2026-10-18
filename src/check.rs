@@ -48,6 +48,7 @@ pub fn run_check_with(root: &Path, clock: &Clock) -> Result<BuildResult> {
 /// alone; that repository's own workflows call the shared one.
 fn check_deploy_workflow(r: &mut BuildResult) {
     let root = r.cfg.root.clone();
+    check_copied_workflows(r, &root);
     if !root.join(".git").exists() {
         return;
     }
@@ -64,6 +65,41 @@ fn check_deploy_workflow(r: &mut BuildResult) {
             format!("{n} scheduled item{} but no .github/workflows/drip.yml, so {} never go{} live", if n == 1 { "" } else { "s" }, if n == 1 { "it" } else { "they" }, if n == 1 { "es" } else { "" }),
             Some(crate::new::DRIP_WORKFLOW),
             Some("run `magehat new deploy`, which writes the daily run (Deploy in `magehat -h`)"),
+        );
+    }
+}
+
+/// A workflow that deploys the site with its own copy of the steps (MageHat
+/// and wrangler) instead of calling the shared deploy-site.yml never gets the
+/// fixes made to those steps: 0.20.0 gave every caller sitemap lastmod and
+/// changed-only IndexNow, and three hand-copied workflows missed both. The
+/// repository is the nearest folder up with a .git, so a site in a subfolder
+/// is covered by its repository's workflows too.
+fn check_copied_workflows(r: &mut BuildResult, site_root: &Path) {
+    let Some(repo) = site_root.ancestors().find(|d| d.join(".git").exists()) else { return };
+    let Ok(entries) = std::fs::read_dir(repo.join(".github").join("workflows")) else { return };
+    let mut copies: Vec<String> = entries
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        // deploy-site.yml is the shared one itself, in the MageHat repository.
+        .filter(|f| (f.ends_with(".yml") || f.ends_with(".yaml")) && f != "deploy-site.yml")
+        .filter(|f| {
+            let text = std::fs::read_to_string(repo.join(".github").join("workflows").join(f)).unwrap_or_default();
+            text.contains("magehat") && text.contains("wrangler") && !text.contains("mage-hat/.github/workflows/deploy-site.yml")
+        })
+        .collect();
+    copies.sort();
+    let nested = repo != site_root;
+    for f in copies {
+        let file = format!(".github/workflows/{f}");
+        r.warn(
+            format!("{file}{} deploys with its own copy of the steps, so MageHat's fixes to them never reach this site", if nested { " (in the repository root)" } else { "" }),
+            Some(&file),
+            Some(if nested {
+                "replace its job with `uses: robo-kick/mage-hat/.github/workflows/deploy-site.yml@main` and `with: site: <this folder>` (Deploy in `magehat -h`)"
+            } else {
+                "replace its job with `uses: robo-kick/mage-hat/.github/workflows/deploy-site.yml@main`, as `magehat new deploy` writes it (Deploy in `magehat -h`)"
+            }),
         );
     }
 }

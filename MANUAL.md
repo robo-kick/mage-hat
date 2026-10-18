@@ -521,8 +521,10 @@ never the hour. Something that must go live at an exact time is merged at
 that time, which deploys within a minute. A site inside a larger repository
 calls the same workflow from that repository's `.github/workflows/` with
 `with: site: <folder>`. `check` warns when a site at the root of its own
-repository has no `deploy.yml`, and when it has scheduled items but no
-`drip.yml`. `build --json` lists the scheduled items as `scheduled`, each
+repository has no `deploy.yml`, when it has scheduled items but no
+`drip.yml`, and when a workflow in the site's repository deploys it with its
+own copy of the steps instead of calling the shared one, since a copy never
+gets the fixes made to them. `build --json` lists the scheduled items as `scheduled`, each
 with its `file`, `date` and `due` moment in UTC.
 
 ## Analytics
