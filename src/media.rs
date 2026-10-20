@@ -267,7 +267,17 @@ pub fn add(root: &Path, file: &str, name: Option<&str>, raw: bool) -> Result<Str
     }
     let hash = digest_bytes(&bytes);
     let record_path = root.join(DIR).join(format!("{name}.json"));
-    let existing = load(root)?.shift_remove(&name);
+    // Only this name's record, never the whole folder: a script running several adds at once
+    // deletes a record before replacing it, and a full read here met one of those mid-listing
+    // and failed with "file not found" (a publish of 800 PDFs, 2026-10-20).
+    let existing = match std::fs::read_to_string(&record_path) {
+        Ok(text) => Some(serde_json::from_str::<Record>(&text).map_err(|e| {
+            MageError::in_file(format!("invalid media record: {e}"), &format!("{DIR}/{name}.json"))
+                .fix("records are written by `magehat media add <file> <name>`; run it again rather than editing")
+        })?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.into()),
+    };
     if let Some(prev) = &existing {
         if prev.hash != hash {
             return Err(MageError::in_file(format!("{name} already names a different file"), &format!("{DIR}/{name}.json"))
