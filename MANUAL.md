@@ -536,10 +536,16 @@ with its `file`, `date` and `due` moment in UTC.
 
 With the table set, every page loads one small module, `/_mh/analytics.<hash>.js`,
 written by the build: the web beacon of the analytics skill, copied in
-verbatim and never fetched from anywhere else, plus the two events a
-website has. `page_view` goes out on every page load and `conversion` with
-the kind when an element carrying `data-track="<kind>"` is clicked, the
-page path and referrer host with each (never a full URL). The kind is a
+verbatim and never fetched from anywhere else, plus the events a website
+has. `page_view` goes out on every page load and `conversion` with the kind
+when an element carrying `data-track="<kind>"` is clicked, the page path and
+referrer host with each (never a full URL). `engaged` carries the seconds
+the page was visible, sent each time it is hidden, so a view's rows add up
+to its time on the page (thirty minutes at most). `read` goes out once a
+view, when the reader has scrolled past three quarters of the reading body,
+with the visible seconds it took: the body is the element marked
+`data-read`, else the page's `main > article`, and a page with neither sends
+no read. The kind is a
 lowercase token (`signup`, `download`, `purchase`, `contact`); a
 `data-placement="<where>"` beside it (`hero`, `footer`) travels as the
 conversion's second param, so two buttons of one kind can be told apart.

@@ -7,10 +7,13 @@
 //! With the table set, every page loads one generated module,
 //! `/_mh/analytics.<hash>.js`: beacon.js verbatim (src/beacon.js, a copy of
 //! the skill's clients/web/beacon.js, never fetched from anywhere at run
-//! time) followed by the glue that creates the beacon and fires the two
-//! events a website has: `page_view` on every load and `conversion` with a
-//! kind token when an element carrying `data-track="<kind>"` is clicked, and
-//! its `data-placement` token, if any, as the second param.
+//! time) followed by the glue (src/glue.js) that creates the beacon and fires
+//! the website events: `page_view` on every load, `conversion` with a kind
+//! token when an element carrying `data-track="<kind>"` is clicked, and its
+//! `data-placement` token, if any, as the second param, `engaged` with the
+//! seconds the page was visible each time it is hidden, and `read` with the
+//! visible seconds so far once the reader passes three quarters of the
+//! reading body (`data-read`, else `main > article`).
 //! Without the table nothing is written: not a byte.
 //!
 //! The version in the batch header is `version` from site.toml when the
@@ -28,10 +31,6 @@ pub const BEACON: &str = include_str!("beacon.js");
 
 /// The attribute content authors put on a button or link to count a conversion.
 pub const TRACK_ATTR: &str = "data-track";
-/// Optional beside it: where on the page the element sits (`hero`, `footer`), so
-/// two buttons with the same kind can be told apart. Sent as the conversion's
-/// second param, empty when absent.
-pub const PLACEMENT_ATTR: &str = "data-placement";
 
 /// A text param of the contract: lowercase token, at most 64 characters.
 static TOKEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9/][a-z0-9_./-]{0,63}$").unwrap());
@@ -43,26 +42,19 @@ pub struct Analytics {
     pub endpoint: String,
 }
 
+/// The site's glue, run after the beacon: `__ENDPOINT__` and `__VERSION__`
+/// are filled in by `script`.
+const GLUE: &str = include_str!("glue.js");
+
 /// The module every page loads: the beacon, then the site's glue.
 pub fn script(cfg: &Config, a: &Analytics) -> String {
     let version = cfg.extra.get("version").and_then(|v| v.as_str()).unwrap_or("");
     // JSON strings are valid JavaScript string literals, quotes included.
-    let endpoint = serde_json::to_string(&a.endpoint).unwrap();
-    let version = serde_json::to_string(version).unwrap();
-    format!(
-        "{}\n\
-         // Written by MageHat from [analytics] in site.toml. A page served from\n\
-         // localhost sends nothing: production only.\n\
-         if (![\"localhost\", \"127.0.0.1\", \"[::1]\"].includes(location.hostname)) {{\n\
-         \x20 const analytics = createBeacon({endpoint}, {version});\n\
-         \x20 analytics(\"page_view\");\n\
-         \x20 addEventListener(\"click\", (e) => {{\n\
-         \x20   const el = e.target instanceof Element ? e.target.closest(\"[{TRACK_ATTR}]\") : null;\n\
-         \x20   if (el) analytics(\"conversion\", [el.getAttribute(\"{TRACK_ATTR}\"), el.getAttribute(\"{PLACEMENT_ATTR}\") ?? \"\"]);\n\
-         \x20 }});\n\
-         }}\n",
-        BEACON.trim_end()
-    )
+    let glue = GLUE
+        .replace("__ENDPOINT__", &serde_json::to_string(&a.endpoint).unwrap())
+        .replace("__VERSION__", &serde_json::to_string(version).unwrap());
+    format!("{}
+{glue}", BEACON.trim_end())
 }
 
 /// `_mh/analytics.<hash>.js`: hashed like a component script, so a changed

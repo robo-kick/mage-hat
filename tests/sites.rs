@@ -1160,7 +1160,7 @@ fn a_repository_site_without_analytics_is_warned() {
     assert!(!warned(&site), "measured: no warning");
 }
 
-/// `[analytics]` ships the beacon and fires the two website events; without
+/// `[analytics]` ships the beacon and fires the website events; without
 /// it the site carries not a byte of analytics.
 #[test]
 fn analytics_beacon_is_opt_in() {
@@ -1190,6 +1190,9 @@ fn analytics_beacon_is_opt_in() {
     assert!(js.contains(&format!("createBeacon(\"{endpoint}\", \"1.2.0\")")), "{js}");
     assert!(js.contains("analytics(\"page_view\");"), "{js}");
     assert!(js.contains("closest(\"[data-track]\")") && js.contains("analytics(\"conversion\", [el.getAttribute(\"data-track\"), el.getAttribute(\"data-placement\") ?? \"\"])"), "{js}");
+    assert!(js.contains("analytics(\"engaged\", [], [delta])") && js.contains("addEventListener(\"visibilitychange\""), "{js}");
+    assert!(js.contains("querySelector(\"[data-read]\") ?? document.querySelector(\"main > article\")") && js.contains("analytics(\"read\", [], [Math.round(visible())])"), "{js}");
+    assert!(!js.contains("__ENDPOINT__") && !js.contains("__VERSION__"), "placeholders filled: {js}");
     assert!(!js.contains("import ") && !js.contains("http://"), "self-contained: {js}");
     let tag = format!("<script type=\"module\" src=\"/{name}\"></script>");
     for out in ["index.html", "pricing/index.html", "blog/hello-world/index.html", "404.html"] {
