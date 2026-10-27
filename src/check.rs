@@ -38,6 +38,7 @@ pub fn run_check_with(root: &Path, clock: &Clock) -> Result<BuildResult> {
     check_open_graph(&mut r);
     check_i18n_parity(&mut r);
     check_external_fonts(&mut r);
+    check_video_assets(&mut r);
     crate::analytics::check(&mut r);
     Ok(r)
 }
@@ -204,6 +205,26 @@ fn check_external_fonts(r: &mut BuildResult) {
     }
     for (m, f) in warnings {
         r.warn_at(m, &f, None, fix);
+    }
+}
+
+/// A video under src/assets is served as a static asset, and static assets answer a
+/// Range request with the whole file and no Content-Range (measured on a deployed site,
+/// 2026-10-25). Safari, on iOS and macOS, will not play a video without 206 answers, so
+/// the trailer played in Chrome and Firefox only and nothing failed on the machine that
+/// built the site. The media bucket (R2) answers ranges, so video belongs there whatever
+/// the site decided about its images.
+fn check_video_assets(r: &mut BuildResult) {
+    let fix = "upload it with magehat media add <file> and reference it as media:<name> ([media] in site.toml names the bucket; Media in the manual): static assets do not answer byte-range requests, and Safari will not play a video without them";
+    let videos: Vec<String> = r
+        .outputs
+        .keys()
+        .filter(|k| !k.starts_with("_mh/"))
+        .filter(|k| matches!(k.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).as_deref(), Some("mp4" | "webm" | "mov" | "m4v" | "ogv")))
+        .cloned()
+        .collect();
+    for key in videos {
+        r.warn_at(format!("video served as a static asset: /{key}"), &format!("src/assets/{key}"), None, fix);
     }
 }
 

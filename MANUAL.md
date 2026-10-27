@@ -579,7 +579,8 @@ the build. Canonical, hreflang, sitemap.xml and robots.txt are generated.
                               translations, broken links and anchors, missing
                               title, description or alt text, duplicate ids,
                               a relative social image, fonts still on Google,
-                              a missing deploy or drip workflow
+                              a video under src/assets (Safari needs the
+                              media bucket), a missing deploy or drip workflow
     magehat build [--json]    write dist/, without items dated in the future
     magehat new ...           page <name> | component <name> | item <coll> <id>
                               (--lang xx for a translation of a page or item)
