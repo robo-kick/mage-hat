@@ -27,10 +27,12 @@ same text under the frontmatter in `packaging/skill-header.md`). Bump
 the script refuses to package a binary that reports a different one or that
 does not print the manual for it.
 
-Pushing a tag `v<version>` runs `.github/workflows/release.yml`, which
-packages Windows and static Linux (musl) builds and attaches them to a
-GitHub release. The Linux one is what a hosting build step (Cloudflare,
-GitHub Pages) downloads to run `magehat build`.
+To release, commit and push the bump, then run `pwsh packaging\release.ps1`.
+It tags the version committed at HEAD and pushes the tag `v<version>`, which
+runs `.github/workflows/release.yml`: that packages Windows and static Linux
+(musl) builds and attaches them to a GitHub release. The Linux one is what a
+hosting build step (Cloudflare, GitHub Pages) downloads to run
+`magehat build`.
 
 ## Use
 
