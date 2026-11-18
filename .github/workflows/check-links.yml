@@ -1,0 +1,53 @@
+# The monthly run every site calls from its own .github/workflows/links.yml:
+# builds the site and requests every external link in the output. A link that
+# has died fails the run, and a failed scheduled run is the alert (GitHub
+# emails the repository owner), so a page of outbound links never needs
+# anyone to remember it.
+#
+# Dead means no connection, a bad certificate, 404, 410 or a server error,
+# three tries in a row. A 401, 403, 406, 429 or 999 is a site refusing a bot,
+# which proves the page exists, so it passes.
+name: check-links
+on:
+  workflow_call:
+    inputs:
+      site:
+        description: Folder holding site.toml, relative to the repository root
+        type: string
+        default: "."
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ${{ inputs.site }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install MageHat
+        run: |
+          curl -fsSL https://github.com/robo-kick/mage-hat/releases/latest/download/magehat-linux-x64.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/magehat-linux-x64" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: magehat build
+
+      - name: Request every external link
+        run: |
+          own=$(sed -n 's/^url *= *"\([^"]*\)".*/\1/p' site.toml | head -n 1)
+          links=$(grep -rhoE 'href="https?://[^"]+"' dist --include=*.html | sed 's/^href="//; s/"$//; s/&amp;/\&/g' | grep -v -F "$own" | sort -u)
+          total=0; dead=0
+          while IFS= read -r url; do
+            [ -z "$url" ] && continue
+            total=$((total + 1))
+            ok=0; code=000
+            for try in 1 2 3; do
+              code=$(curl -sS -L -o /dev/null -m 30 -w '%{http_code}' -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36' "$url" 2> /dev/null) || code=000
+              case "$code" in 2??|3??|401|403|406|429|999) ok=1; break ;; esac
+              sleep 3
+            done
+            if [ "$ok" = 0 ]; then dead=$((dead + 1)); echo "::error::$code $url"; fi
+          done <<< "$links"
+          echo "$total external links, $dead dead"
+          [ "$dead" = 0 ]
