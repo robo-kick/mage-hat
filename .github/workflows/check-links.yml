@@ -4,9 +4,12 @@
 # emails the repository owner), so a page of outbound links never needs
 # anyone to remember it.
 #
-# Dead means no connection, a bad certificate, 404, 410 or a server error,
-# three tries in a row. A 401, 403, 406, 429 or 999 is a site refusing a bot,
-# which proves the page exists, so it passes.
+# Dead, three tries in a row: 404, 410, a server error, a hostname that no
+# longer resolves, or a bad certificate. A 401, 403, 406, 429 or 999 is a site
+# refusing a bot, which proves the page exists. A timeout or a refused
+# connection is only a warning: Brazilian public bodies in particular drop
+# connections from GitHub's foreign addresses while answering at home, and an
+# alert that cries wolf every month gets ignored.
 name: check-links
 on:
   workflow_call:
@@ -36,18 +39,27 @@ jobs:
       - name: Request every external link
         run: |
           own=$(sed -n 's/^url *= *"\([^"]*\)".*/\1/p' site.toml | head -n 1)
-          links=$(grep -rhoE 'href="https?://[^"]+"' dist --include=*.html | sed 's/^href="//; s/"$//; s/&amp;/\&/g' | grep -v -F "$own" | sort -u)
-          total=0; dead=0
-          while IFS= read -r url; do
-            [ -z "$url" ] && continue
-            total=$((total + 1))
-            ok=0; code=000
+          grep -rhoE 'href="https?://[^"]+"' dist --include=*.html | sed 's/^href="//; s/"$//; s/&amp;/\&/g' | grep -v -F "$own" | sort -u > "$RUNNER_TEMP/links.txt"
+          check_one() {
+            url=$1; code=000; rc=0
             for try in 1 2 3; do
-              code=$(curl -sS -L -o /dev/null -m 30 -w '%{http_code}' -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36' "$url" 2> /dev/null) || code=000
-              case "$code" in 2??|3??|401|403|406|429|999) ok=1; break ;; esac
-              sleep 3
+              code=$(curl -sS -L -o /dev/null -m 20 -w '%{http_code}' -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36' "$url" 2> /dev/null); rc=$?
+              case "$code" in 2??|3??|401|403|406|429|999) return 0 ;; esac
+              sleep 2
             done
-            if [ "$ok" = 0 ]; then dead=$((dead + 1)); echo "::error::$code $url"; fi
-          done <<< "$links"
+            if [ "$code" != 000 ]; then echo "DEAD $code $url"
+            else
+              case "$rc" in
+                6|35|51|58|59|60|83) echo "DEAD curl-$rc $url" ;;
+                *) echo "UNREACHABLE curl-$rc $url" ;;
+              esac
+            fi
+          }
+          export -f check_one
+          xargs -a "$RUNNER_TEMP/links.txt" -P 8 -I{} bash -c 'check_one "{}"' > "$RUNNER_TEMP/results.txt"
+          total=$(wc -l < "$RUNNER_TEMP/links.txt")
+          dead=$(grep -c '^DEAD' "$RUNNER_TEMP/results.txt" || true)
+          grep '^UNREACHABLE' "$RUNNER_TEMP/results.txt" | sed 's/^UNREACHABLE /::warning::unreachable from here: /' || true
+          grep '^DEAD' "$RUNNER_TEMP/results.txt" | sed 's/^DEAD /::error::/' || true
           echo "$total external links, $dead dead"
           [ "$dead" = 0 ]
